@@ -1,0 +1,5 @@
+C:\Users\Laptop\source\repos\applicationform\applicationform\obj\Debug\applicationform.csproj.AssemblyReference.cache
+C:\Users\Laptop\source\repos\applicationform\applicationform\obj\Debug\applicationform.Form1.resources
+C:\Users\Laptop\source\repos\applicationform\applicationform\obj\Debug\applicationform.Properties.Resources.resources
+C:\Users\Laptop\source\repos\applicationform\applicationform\obj\Debug\applicationform.csproj.GenerateResource.cache
+C:\Users\Laptop\source\repos\applicationform\applicationform\obj\Debug\applicationform.csproj.CoreCompileInputs.cache
