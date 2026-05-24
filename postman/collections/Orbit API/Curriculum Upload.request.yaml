@@ -1,0 +1,13 @@
+$kind: http-request
+url: '{{base_url}}/api/curriculum/upload'
+method: POST
+order: 1000
+headers:
+  - key: Accept
+    value: application/json
+body:
+  type: formdata
+  content:
+    - key: file
+      type: file
+      src: ''

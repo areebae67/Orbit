@@ -1,0 +1,66 @@
+@{
+    ViewData["Title"] = "Orbit Curriculum Analyzer";
+}
+
+<div class="container mt-5">
+
+    <h1 class="text-center mb-4">
+        Orbit Curriculum Analyzer
+    </h1>
+
+    <div class="card p-4 shadow">
+
+        <label class="mb-2">Select PDF File</label>
+        <input type="file" id="pdfFile" class="form-control mb-3" accept="application/pdf" />
+
+        <button class="btn btn-primary w-100" onclick="uploadPdf()">
+            Upload & Extract
+        </button>
+
+    </div>
+
+    <div class="mt-4">
+
+        <h4>Response</h4>
+        <pre id="resultBox" class="border p-3 bg-light" style="min-height:150px;"></pre>
+
+    </div>
+
+</div>
+
+<script>
+    async function uploadPdf() {
+
+        const fileInput = document.getElementById("pdfFile");
+        const resultBox = document.getElementById("resultBox");
+
+        if (fileInput.files.length === 0) {
+            alert("Please select a PDF file first.");
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append("file", fileInput.files[0]);
+
+        resultBox.textContent = "Uploading...";
+
+        try {
+            const response = await fetch("http://localhost:5000/api/curriculum/upload", {
+                method: "POST",
+                body: formData
+            });
+
+            if (!response.ok) {
+                throw new Error("Server error: " + response.status);
+            }
+
+            const data = await response.json();
+
+            resultBox.textContent = JSON.stringify(data, null, 2);
+
+        } catch (error) {
+            console.error(error);
+            resultBox.textContent = "Upload failed. Check API or CORS.";
+        }
+    }
+</script>

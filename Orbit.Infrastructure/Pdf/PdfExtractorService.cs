@@ -1,23 +1,23 @@
-using System.Text;
 using UglyToad.PdfPig;
+using System.Text;
 
 namespace Orbit.Infrastructure.Pdf
 {
     public class PdfExtractorService
     {
-        public string ExtractText(string filePath)
+        public static string ExtractText(string filePath)
         {
-            var text = new StringBuilder();
+            var fullText = new StringBuilder();
 
             using (var document = PdfDocument.Open(filePath))
             {
                 foreach (var page in document.GetPages())
                 {
-                    text.AppendLine(page.Text);
+                    fullText.AppendLine(page.Text);
                 }
             }
 
-            return text.ToString();
+            return fullText.ToString();
         }
     }
 }
