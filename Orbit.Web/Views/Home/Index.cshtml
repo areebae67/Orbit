@@ -10,11 +10,20 @@
 
     <div class="card p-4 shadow">
 
-        <label class="mb-2">Select PDF File</label>
-        <input type="file" id="pdfFile" class="form-control mb-3" accept="application/pdf" />
+        <label class="mb-2">University Name</label>
+        <input type="text"
+               id="universityName"
+               class="form-control mb-3"
+               placeholder="e.g. NUML, FAST, COMSATS" />
 
-        <button class="btn btn-primary w-100" onclick="uploadPdf()">
-            Upload & Extract
+        <label class="mb-2">Select PDF File</label>
+        <input type="file"
+               id="pdfFile"
+               class="form-control mb-3"
+               accept="application/pdf" />
+
+        <button class="btn btn-primary w-100" onclick="parseCurriculum()">
+            Parse Curriculum
         </button>
 
     </div>
@@ -22,45 +31,71 @@
     <div class="mt-4">
 
         <h4>Response</h4>
-        <pre id="resultBox" class="border p-3 bg-light" style="min-height:150px;"></pre>
+
+        <pre id="resultBox"
+             class="border p-3 bg-light"
+             style="min-height:250px; white-space:pre-wrap;"></pre>
 
     </div>
 
 </div>
 
 <script>
-    async function uploadPdf() {
+
+    async function parseCurriculum() {
 
         const fileInput = document.getElementById("pdfFile");
+        const universityInput = document.getElementById("universityName");
         const resultBox = document.getElementById("resultBox");
 
         if (fileInput.files.length === 0) {
-            alert("Please select a PDF file first.");
+            alert("Please select a PDF file.");
+            return;
+        }
+
+        if (!universityInput.value.trim()) {
+            alert("Please enter university name.");
             return;
         }
 
         const formData = new FormData();
-        formData.append("file", fileInput.files[0]);
 
-        resultBox.textContent = "Uploading...";
+        formData.append("file", fileInput.files[0]);
+        formData.append("universityName", universityInput.value);
+
+        resultBox.textContent = "Parsing curriculum with Gemini AI...";
 
         try {
-            const response = await fetch("http://localhost:5000/api/curriculum/upload", {
-                method: "POST",
-                body: formData
-            });
+
+            const response = await fetch(
+                "https://localhost:55593/api/curriculum/parse",
+                {
+                    method: "POST",
+                    body: formData
+                });
 
             if (!response.ok) {
-                throw new Error("Server error: " + response.status);
+
+                const errorText = await response.text();
+
+                throw new Error(
+                    `Server Error ${response.status}\n\n${errorText}`
+                );
             }
 
             const data = await response.json();
 
-            resultBox.textContent = JSON.stringify(data, null, 2);
+            resultBox.textContent =
+                JSON.stringify(data, null, 2);
 
-        } catch (error) {
+        }
+        catch (error) {
+
             console.error(error);
-            resultBox.textContent = "Upload failed. Check API or CORS.";
+
+            resultBox.textContent =
+                "Request Failed\n\n" + error.message;
         }
     }
+
 </script>

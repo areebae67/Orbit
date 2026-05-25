@@ -1,5 +1,7 @@
 using Orbit.Infrastructure.DependencyInjection;
+using Orbit.Application.DependencyInjection;
 using Orbit.Infrastructure.Pdf;
+using Orbit.Application.Services.Parsing;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -9,17 +11,35 @@ var builder = WebApplication.CreateBuilder(args);
 
 // MVC + API Controllers
 builder.Services.AddControllersWithViews();
-builder.Services.AddControllers(); // IMPORTANT for API endpoints
+builder.Services.AddControllers();
 
-// Swagger (API documentation)
+// Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 // Clean Architecture DI
+builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 
-// PDF service
+// CORS
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll",
+        policy =>
+        {
+            policy
+                .AllowAnyOrigin()
+                .AllowAnyHeader()
+                .AllowAnyMethod();
+        });
+});
+
+// PDF Service
 builder.Services.AddScoped<PdfExtractorService>();
+
+//
+// 🚀 BUILD APP
+//
 
 var app = builder.Build();
 
@@ -38,23 +58,31 @@ else
     app.UseHsts();
 }
 
+app.UseHttpsRedirection();
+
 app.UseStaticFiles();
 
 app.UseRouting();
 
+// ✅ CORS MUST BE HERE
+app.UseCors("AllowAll");
+
 app.UseAuthorization();
 
 //
-// 📌 ROUTING
+// 📌 ROUTES
 //
 
-// API routes
+// API Controllers
 app.MapControllers();
 
-// MVC routes (views)
+// MVC Views
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}"
 );
+
+// Test Endpoint
 app.MapGet("/test", () => "API is working");
+
 app.Run();
