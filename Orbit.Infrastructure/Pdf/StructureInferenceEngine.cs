@@ -10,21 +10,19 @@ namespace Orbit.Infrastructure.Pdf
             result.Format = DetectFormat(cleanedText);
             result.SemesterBoundaries = FindSemesterBoundaries(cleanedText);
             result.CourseBlocks = ExtractCourseBlocks(cleanedText, result.Format);
+            AssignSemesters(result.CourseBlocks, result.SemesterBoundaries, cleanedText);
             result.ConfidenceScore = ComputeConfidence(result);
             return result;
         }
 
         private static CurriculumFormat DetectFormat(string text)
         {
-            // NUML booklet: "Course Code: CSIT-107" pattern
             if (Regex.IsMatch(text, @"Course Code\s*:\s*[A-Z]{2,6}[-\s]\d{3,4}", RegexOptions.IgnoreCase))
                 return CurriculumFormat.Booklet;
 
-            // Table format: code + title + credits in columns
             if (Regex.IsMatch(text, @"[A-Z]{2,6}-\d{3,4}[L]?\s+.{10,60}\s+\d-\d"))
                 return CurriculumFormat.SchemeTable;
 
-            // Has course codes anywhere
             if (Regex.IsMatch(text, @"[A-Z]{2,6}-\d{3,4}"))
                 return CurriculumFormat.SimpleList;
 
@@ -36,8 +34,6 @@ namespace Orbit.Infrastructure.Pdf
             var boundaries = new List<SemesterBoundary>();
             var lines = text.Split('\n');
 
-            // Matches: "Semester I", "Semester – I", "SEMESTER I", "Semester 1"
-            // Also matches: "Semester – IV" with em-dash
             var semPattern = new Regex(
                 @"^\s*Semester\s*[–\-]?\s*(I{1,3}V?|VI{0,3}|VIII|VII|V|\d{1,2})\s*$",
                 RegexOptions.IgnoreCase);
@@ -74,12 +70,9 @@ namespace Orbit.Infrastructure.Pdf
         private static List<RawCourseBlock> ExtractFromBooklet(string text)
         {
             var blocks = new List<RawCourseBlock>();
+            var lines = text.Split('\n');
 
-            // NUML pattern:
-            // "Application of Information and Communication Technologies\nCourse Code: CSIT-107"
-            // OR the table rows: "CSIT-107  Application of Info...  2-1"
-
-            // Pattern 1: Booklet course sections with "Course Code:" on next line
+            // Pattern 1: Booklet — title on one line, "Course Code: CSIT-107" on next
             var bookletPattern = new Regex(
                 @"(?<title>[A-Z][A-Za-z\s&/,\-().']{5,100}?)\s*\n\s*Course Code\s*:\s*(?<code>[A-Z]{2,6}[-\s]\d{3,4}L?)",
                 RegexOptions.Multiline);
@@ -90,23 +83,25 @@ namespace Orbit.Infrastructure.Pdf
             {
                 var start = matches[i].Index;
                 var end = i + 1 < matches.Count ? matches[i + 1].Index : text.Length;
-                var title = matches[i].Groups["title"].Value.Trim();
 
-                // Skip table of contents entries (very short surrounding text)
+                // Skip table-of-contents entries (very little surrounding text)
                 if (end - start < 100 && i < matches.Count - 1)
                     continue;
 
+                // Compute approximate line index for semester assignment
+                var lineIndex = text[..start].Count(c => c == '\n');
+
                 blocks.Add(new RawCourseBlock
                 {
-                    CourseTitle = title,
+                    CourseTitle = matches[i].Groups["title"].Value.Trim(),
                     CourseCode = matches[i].Groups["code"].Value.Trim().Replace(" ", "-"),
                     FullText = text[start..Math.Min(end, start + 4000)],
-                    Format = CurriculumFormat.Booklet
+                    Format = CurriculumFormat.Booklet,
+                    LineIndex = lineIndex
                 });
             }
 
-            // Pattern 2: Scheme table rows (as fallback or supplement)
-            // "CSIT-107  Application of Info. & Comm. Tech.  2-1"
+            // Pattern 2: Scheme table rows as fallback
             if (blocks.Count == 0)
             {
                 var tablePattern = new Regex(
@@ -115,13 +110,15 @@ namespace Orbit.Infrastructure.Pdf
 
                 foreach (Match m in tablePattern.Matches(text))
                 {
+                    var lineIndex = text[..m.Index].Count(c => c == '\n');
                     blocks.Add(new RawCourseBlock
                     {
                         CourseCode = m.Groups["code"].Value.Trim(),
                         CourseTitle = m.Groups["title"].Value.Trim(),
                         CreditHours = m.Groups["credits"].Value.Trim(),
                         FullText = m.Value,
-                        Format = CurriculumFormat.SchemeTable
+                        Format = CurriculumFormat.SchemeTable,
+                        LineIndex = lineIndex
                     });
                 }
             }
@@ -133,24 +130,44 @@ namespace Orbit.Infrastructure.Pdf
         {
             var blocks = new List<RawCourseBlock>();
 
-            // "CSIT-107  Application of Info. & Comm. Tech.  2-1"
             var rowPattern = new Regex(
                 @"(?<code>[A-Z]{2,6}-\d{3,4}L?)\s+(?<title>[A-Za-z][A-Za-z\s&/,\-().']{5,70}?)\s+(?<credits>\d[-–+]\d|\d)\s",
                 RegexOptions.Multiline);
 
             foreach (Match m in rowPattern.Matches(text))
             {
+                var lineIndex = text[..m.Index].Count(c => c == '\n');
                 blocks.Add(new RawCourseBlock
                 {
                     CourseCode = m.Groups["code"].Value.Trim(),
                     CourseTitle = m.Groups["title"].Value.Trim(),
                     CreditHours = m.Groups["credits"].Value.Trim(),
                     FullText = m.Value,
-                    Format = CurriculumFormat.SchemeTable
+                    Format = CurriculumFormat.SchemeTable,
+                    LineIndex = lineIndex
                 });
             }
 
             return blocks;
+        }
+
+        // Assign semester numbers based on which boundary comes before each block
+        private static void AssignSemesters(
+            List<RawCourseBlock> blocks,
+            List<SemesterBoundary> boundaries,
+            string text)
+        {
+            if (!boundaries.Any()) return;
+
+            foreach (var block in blocks)
+            {
+                var closest = boundaries
+                    .Where(b => b.LineIndex <= block.LineIndex)
+                    .OrderByDescending(b => b.LineIndex)
+                    .FirstOrDefault();
+
+                block.DetectedSemester = closest?.SemesterNumber ?? 0;
+            }
         }
 
         private static int ComputeConfidence(StructureInferenceResult r)
@@ -205,5 +222,6 @@ namespace Orbit.Infrastructure.Pdf
         public string FullText { get; set; } = string.Empty;
         public CurriculumFormat Format { get; set; }
         public int DetectedSemester { get; set; }
+        public int LineIndex { get; set; }  // for semester boundary matching
     }
 }

@@ -19,8 +19,8 @@ namespace Orbit.Web.Controllers
             _pipeline = pipeline;
             _comparison = comparison;
             _logger = logger;
-
         }
+
         [HttpPost("debug-structure")]
         public async Task<IActionResult> DebugStructure(IFormFile file)
         {
@@ -30,13 +30,7 @@ namespace Orbit.Web.Controllers
             using (var stream = new FileStream(filePath, FileMode.Create))
                 await file.CopyToAsync(stream);
 
-            var extraction = _pipeline.GetType()
-                .GetField("_textProcessor",
-                    System.Reflection.BindingFlags.NonPublic |
-                    System.Reflection.BindingFlags.Instance)
-                ?.GetValue(_pipeline);
-
-            // Just read the file text directly
+            // Test on RAW text (no cleaning)
             var rawText = string.Empty;
             using (var doc = UglyToad.PdfPig.PdfDocument.Open(filePath))
             {
@@ -46,23 +40,37 @@ namespace Orbit.Web.Controllers
                 rawText = sb.ToString();
             }
 
-            var testMatch = System.Text.RegularExpressions.Regex.IsMatch(
-                rawText,
-                @"Course Code\s*:\s*[A-Z]{2,6}[-\s]\d{3,4}",
-                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            // Test on raw text directly
+            var engine = new Orbit.Infrastructure.Pdf.StructureInferenceEngine();
+            var structureRaw = engine.Infer(rawText);
 
-            var first300 = rawText[..Math.Min(300, rawText.Length)];
+            // Test on cleaned text
+            var processor = new Orbit.Infrastructure.Pdf.CurriculumTextProcessor();
+            var extraction = processor.ExtractAndClean(filePath);
+            var structureCleaned = engine.Infer(extraction.CleanedText);
 
             return Ok(new
             {
-                regexMatched = testMatch,
-                textLength = rawText.Length,
-                preview = first300
+                raw = new
+                {
+                    format = structureRaw.Format.ToString(),
+                    blocksFound = structureRaw.CourseBlocks.Count,
+                    semesters = structureRaw.SemesterBoundaries.Count,
+                    firstBlock = structureRaw.CourseBlocks.FirstOrDefault()?.CourseTitle
+                },
+                cleaned = new
+                {
+                    format = structureCleaned.Format.ToString(),
+                    blocksFound = structureCleaned.CourseBlocks.Count,
+                    semesters = structureCleaned.SemesterBoundaries.Count,
+                    firstBlock = structureCleaned.CourseBlocks.FirstOrDefault()?.CourseTitle
+                },
+                cleanedTextLength = extraction.CleanedText.Length,
+                courseCodeInRaw = System.Text.RegularExpressions.Regex.IsMatch(rawText, @"Course Code\s*:\s*[A-Z]{2,6}[-\s]\d{3,4}", System.Text.RegularExpressions.RegexOptions.IgnoreCase),
+                courseCodeInCleaned = System.Text.RegularExpressions.Regex.IsMatch(extraction.CleanedText, @"Course Code\s*:\s*[A-Z]{2,6}[-\s]\d{3,4}", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
             });
         }
-        /// <summary>
-        /// Full 7-layer pipeline: upload PDF → get normalized courses
-        /// </summary>
+
         [HttpPost("process")]
         public async Task<IActionResult> Process(
             IFormFile file,
@@ -89,10 +97,6 @@ namespace Orbit.Web.Controllers
             return Ok(result);
         }
 
-        /// <summary>
-        /// Compare two universities by their normalized course data
-        /// (in-memory for now; Phase 2 loads from DB)
-        /// </summary>
         [HttpPost("compare")]
         public IActionResult Compare([FromBody] CompareRequest request)
         {
@@ -105,10 +109,5 @@ namespace Orbit.Web.Controllers
     {
         public UniversityCurriculum Source { get; set; } = new();
         public UniversityCurriculum Target { get; set; } = new();
-
-        
-        
     }
-    }
-
-    
+}

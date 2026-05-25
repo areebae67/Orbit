@@ -2,14 +2,6 @@
 
 namespace Orbit.Infrastructure.Pdf
 {
-    /// <summary>
-    /// Layer 4: Course Block Builder
-    /// Takes raw course blocks from the Structure Inference Engine and extracts
-    /// every field that can be determined WITHOUT AI — pure regex/pattern matching.
-    /// 
-    /// Only what cannot be determined here goes to AI (Layer 5).
-    /// This minimizes AI calls and cost.
-    /// </summary>
     public class CourseBlockBuilder
     {
         public List<StructuredCourseBlock> Build(
@@ -38,8 +30,6 @@ namespace Orbit.Infrastructure.Pdf
                     AssessmentStyle = InferAssessmentStyle(raw.FullText),
                     SourceFormat = raw.Format,
                     RawBlock = raw.FullText,
-
-                    // Flags for AI enrichment (Layer 5)
                     NeedsAiDepthRating = true,
                     NeedsAiDifficultyLevel = true,
                     NeedsAiSkillTags = true
@@ -48,11 +38,8 @@ namespace Orbit.Infrastructure.Pdf
                 result.Add(block);
             }
 
-            // Remove lab duplicates — keep theory, mark it has a lab
             return MergeLabs(result);
         }
-
-        // ── Field extractors ──────────────────────────────────────────────────
 
         private static string Normalize(string title) =>
             Regex.Replace(title.Trim(), @"\s+", " ");
@@ -62,7 +49,6 @@ namespace Orbit.Infrastructure.Pdf
 
         private static int ParseCredits(string credits)
         {
-            // "3-1" = 3 theory + 1 lab = 4 total, "3+0" = 3, "3" = 3
             if (string.IsNullOrWhiteSpace(credits)) return 3;
             var m = Regex.Match(credits, @"(\d+)\s*[-+]\s*(\d+)");
             if (m.Success)
@@ -91,12 +77,13 @@ namespace Orbit.Infrastructure.Pdf
             code.EndsWith("L") ||
             Regex.IsMatch(title, @"\blab\b|\blaboratory\b", RegexOptions.IgnoreCase);
 
+        // Uses LineIndex on RawCourseBlock for accurate semester assignment
         private static int InferSemesterFromContext(
             RawCourseBlock raw, List<SemesterBoundary> boundaries)
         {
             if (!boundaries.Any()) return 0;
-            // Return semester whose boundary appears closest before this block
             return boundaries
+                .Where(b => b.LineIndex <= raw.LineIndex)
                 .OrderByDescending(b => b.LineIndex)
                 .FirstOrDefault()?.SemesterNumber ?? 0;
         }
@@ -121,7 +108,6 @@ namespace Orbit.Infrastructure.Pdf
         {
             var topics = new List<string>();
 
-            // From "Course Materials" section — bullet points or comma-separated
             var materialsSection = Regex.Match(text,
                 @"Course Materials\s*\n(?<body>[\s\S]{50,2000}?)(?=Course Weekly Schedule|Course Learning|Recommended|$)",
                 RegexOptions.IgnoreCase);
@@ -129,13 +115,10 @@ namespace Orbit.Infrastructure.Pdf
             if (materialsSection.Success)
             {
                 var body = materialsSection.Groups["body"].Value;
-
-                // Extract bullet items (lines starting with ●, -, *, or numbered)
                 var bullets = Regex.Matches(body, @"(?:^|\n)\s*[●\-\*•]\s*(?<item>[^\n]{5,100})");
                 foreach (Match b in bullets)
                     topics.Add(b.Groups["item"].Value.Trim());
 
-                // If no bullets, split on commas for inline lists
                 if (!topics.Any())
                 {
                     topics = body.Split(',')
@@ -172,8 +155,6 @@ namespace Orbit.Infrastructure.Pdf
             return "Mixed";
         }
 
-        // ── Lab deduplication ─────────────────────────────────────────────────
-
         private static List<StructuredCourseBlock> MergeLabs(List<StructuredCourseBlock> blocks)
         {
             var theory = blocks.Where(b => !b.IsLabCourse).ToList();
@@ -181,7 +162,6 @@ namespace Orbit.Infrastructure.Pdf
 
             foreach (var lab in labs)
             {
-                // Match lab to theory course: CS-301L → CS-301
                 var theoryCode = lab.CourseCode.TrimEnd('L');
                 var match = theory.FirstOrDefault(t =>
                     t.CourseCode == theoryCode ||
@@ -190,7 +170,7 @@ namespace Orbit.Infrastructure.Pdf
                 if (match != null)
                     match.HasLab = true;
                 else
-                    theory.Add(lab); // standalone lab
+                    theory.Add(lab);
             }
 
             return theory;
@@ -198,15 +178,12 @@ namespace Orbit.Infrastructure.Pdf
 
         private static double Similarity(string a, string b)
         {
-            // Simple word overlap ratio
             var wa = a.ToLower().Split(' ').ToHashSet();
             var wb = b.ToLower().Split(' ').ToHashSet();
             var intersection = wa.Intersect(wb).Count();
             return (double)intersection / Math.Max(wa.Count, wb.Count);
         }
     }
-
-    // ── Output type ───────────────────────────────────────────────────────────
 
     public class StructuredCourseBlock
     {
@@ -224,13 +201,9 @@ namespace Orbit.Infrastructure.Pdf
         public string AssessmentStyle { get; set; } = "Unknown";
         public CurriculumFormat SourceFormat { get; set; }
         public string RawBlock { get; set; } = string.Empty;
-
-        // AI enrichment flags
         public bool NeedsAiDepthRating { get; set; }
         public bool NeedsAiDifficultyLevel { get; set; }
         public bool NeedsAiSkillTags { get; set; }
-
-        // Filled by AI (Layer 5)
         public int DepthRating { get; set; }
         public int BreadthRating { get; set; }
         public int PracticalBalance { get; set; }
